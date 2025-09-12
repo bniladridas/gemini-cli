@@ -7,6 +7,7 @@
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 const execAsync = promisify(exec);
@@ -69,7 +70,7 @@ export async function saveClipboardImage(
   try {
     // Create a temporary directory for clipboard images within the target directory
     // This avoids security restrictions on paths outside the target directory
-    const baseDir = targetDir || process.cwd();
+    const baseDir = targetDir || os.tmpdir();
     const tempDir = path.join(baseDir, '.gemini-clipboard');
     await fs.mkdir(tempDir, { recursive: true });
 

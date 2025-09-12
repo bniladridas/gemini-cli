@@ -4,6 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * Platform-specific behavior
+ *
+ * DEBUG=* npm test -- -t "clipboard"
+ *
+ * DEBUG=* npx vitest run -t "clipboard"
+ *
+ * If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ */
+
 import { describe, it, expect } from 'vitest';
 import {
   clipboardHasImage,
