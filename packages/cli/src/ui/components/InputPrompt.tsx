@@ -342,7 +342,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
         }
 
         // Insert the file path with friendly name in markdown format: [screenshot-1](@path/to/image.png)
-        const relativePath = path.relative(process.cwd(), saveResult.filePath);
+        const relativePath = path.relative(targetDir, saveResult.filePath);
         const displayName = saveResult.displayName || 'screenshot';
         const markdownLink = `[${displayName}](@${relativePath})`;
 
