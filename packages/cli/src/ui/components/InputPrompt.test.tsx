@@ -252,6 +252,8 @@ describe('InputPrompt', () => {
       setQueueErrorMessage: vi.fn(),
       streamingState: StreamingState.Idle,
       setBannerVisible: vi.fn(),
+      suggestionsPosition: 'below',
+      onSuggestionsVisibilityChange: vi.fn(),
     };
   });
 
@@ -460,7 +462,7 @@ describe('InputPrompt', () => {
   describe('clipboard image paste', () => {
     beforeEach(() => {
       vi.mocked(clipboardUtils.clipboardHasImage).mockResolvedValue(false);
-      vi.mocked(clipboardUtils.saveClipboardImage).mockResolvedValue({
+      vi.mocked(clipboardUtils.saveClipboardImageDetailed).mockResolvedValue({
         filePath: null,
         error: 'No image in clipboard',
       });
@@ -471,7 +473,7 @@ describe('InputPrompt', () => {
 
     it('should handle Ctrl+V when clipboard has an image', async () => {
       vi.mocked(clipboardUtils.clipboardHasImage).mockResolvedValue(true);
-      vi.mocked(clipboardUtils.saveClipboardImage).mockResolvedValue({
+      vi.mocked(clipboardUtils.saveClipboardImageDetailed).mockResolvedValue({
         filePath: '/test/.gemini-clipboard/clipboard-123.png',
         error: undefined,
       });
@@ -517,7 +519,7 @@ describe('InputPrompt', () => {
 
     it('should handle image save failure gracefully', async () => {
       vi.mocked(clipboardUtils.clipboardHasImage).mockResolvedValue(true);
-      vi.mocked(clipboardUtils.saveClipboardImage).mockResolvedValue({
+      vi.mocked(clipboardUtils.saveClipboardImageDetailed).mockResolvedValue({
         filePath: null,
         error: 'Failed to save image',
       });
@@ -543,7 +545,7 @@ describe('InputPrompt', () => {
         'clipboard-456.png',
       );
       vi.mocked(clipboardUtils.clipboardHasImage).mockResolvedValue(true);
-      vi.mocked(clipboardUtils.saveClipboardImage).mockResolvedValue({
+      vi.mocked(clipboardUtils.saveClipboardImageDetailed).mockResolvedValue({
         filePath: imagePath,
         error: undefined,
       });

@@ -32,7 +32,7 @@ import { useKittyKeyboardProtocol } from '../hooks/useKittyKeyboardProtocol.js';
 import { takeAndAddScreenshot } from '../utils/screenshotUtils.js';
 import {
   clipboardHasImage,
-  saveClipboardImage,
+  saveClipboardImageDetailed,
   cleanupOldClipboardImages,
 } from '../utils/clipboardUtils.js';
 import * as path from 'node:path';
@@ -77,7 +77,10 @@ export interface InputPromptProps {
   vimHandleInput?: (key: Key) => boolean;
   isEmbeddedShellFocused?: boolean;
   setQueueErrorMessage: (message: string | null) => void;
+  setBannerVisible: (visible: boolean) => void;
   streamingState: StreamingState;
+  suggestionsPosition: 'above' | 'below';
+  onSuggestionsVisibilityChange: (visible: boolean) => void;
   popAllMessages?: (onPop: (messages: string | undefined) => void) => void;
 }
 
@@ -155,13 +158,11 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
 
   const completion = useCommandCompletion(
     buffer,
-    dirs,
     config.getTargetDir(),
     slashCommands,
     commandContext,
     reverseSearchActive,
     shellModeActive,
-    config,
   );
 
   const reverseSearchCompletion = useReverseSearchCompletion(
@@ -330,7 +331,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
           // Ignore cleanup errors
         });
 
-        const saveResult = await saveClipboardImage(targetDir);
+        const saveResult = await saveClipboardImageDetailed(targetDir);
 
         if (!saveResult?.filePath) {
           console.error('Failed to save image from clipboard');
@@ -448,7 +449,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
 
       if (key.paste) {
         // Record paste time to prevent accidental auto-submission
-        if (!isTerminalPasteTrusted(kittyProtocol.supported)) {
+        if (!isTerminalPasteTrusted(kittyProtocol.enabled)) {
           setRecentUnsafePasteTime(Date.now());
 
           // Clear any existing paste timeout
@@ -834,7 +835,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
       }
 
       // Ctrl+V for clipboard image paste
-      if (keyMatchers[Command.PASTE_CLIPBOARD_IMAGE](key)) {
+      if (keyMatchers[Command.PASTE_CLIPBOARD](key)) {
         // Check for Shift key to determine if we should take a screenshot
         if (key.shift) {
           console.log('Taking screenshot...');
@@ -884,7 +885,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
       recentUnsafePasteTime,
       commandSearchActive,
       commandSearchCompletion,
-      kittyProtocol.supported,
+      kittyProtocol.enabled,
       tryLoadQueuedMessages,
       handleScreenshot,
       isPasting,
