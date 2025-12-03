@@ -48,7 +48,6 @@ type ClipboardUtilsModule = typeof clipboardUtils & {
 const utils = clipboardUtils as unknown as ClipboardUtilsModule;
 
 const {
-  saveClipboardImage,
   cleanupOldClipboardImages,
   clipboardState,
   getClipboardContent,
