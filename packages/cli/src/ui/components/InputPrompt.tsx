@@ -23,7 +23,7 @@ import { useKeypress } from '../hooks/useKeypress.js';
 import { keyMatchers, Command } from '../keyMatchers.js';
 import type { CommandContext, SlashCommand } from '../commands/types.js';
 import type { Config } from '@google/gemini-cli-core';
-import { ApprovalMode } from '@google/gemini-cli-core';
+import { ApprovalMode, debugLogger } from '@google/gemini-cli-core';
 import {
   parseInputForHighlighting,
   buildSegmentsForVisualSlice,
@@ -317,7 +317,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
     try {
       const hasImage = await clipboardHasImage();
       if (!hasImage) {
-        console.log('No image found in clipboard');
+        debugLogger.log('No image found in clipboard');
         return false;
       }
 
@@ -332,7 +332,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
         const saveResult = await saveClipboardImageDetailed(targetDir);
 
         if (!saveResult?.filePath) {
-          console.error('Failed to save image from clipboard');
+          debugLogger.error('Failed to save image from clipboard');
           return false;
         }
 
@@ -358,14 +358,14 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
         // Update cursor position
         buffer.cursor = [cursorPos[0], cursorPos[1] + markdownLink.length];
 
-        console.log(`Added image: ${markdownLink}`);
+        debugLogger.log(`Added image: ${markdownLink}`);
         return true;
       } catch (error) {
-        console.error('Error processing clipboard image:', error);
+        debugLogger.error('Error processing clipboard image:', error);
         return false;
       }
     } catch (error) {
-      console.error('Error handling clipboard image:', error);
+      debugLogger.error('Error handling clipboard image:', error);
       return false;
     }
   }, [buffer, config]);
@@ -396,12 +396,12 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
           cursorPos[1] + screenshotMarkdown.length,
         ];
 
-        console.log(`Added screenshot: ${screenshotMarkdown}`);
+        debugLogger.log(`Added screenshot: ${screenshotMarkdown}`);
       } else {
-        console.error('Failed to take screenshot');
+        debugLogger.error('Failed to take screenshot');
       }
     } catch (error) {
-      console.error('Error taking screenshot:', error);
+      debugLogger.error('Error taking screenshot:', error);
     }
   }, [buffer, config]);
 
@@ -803,7 +803,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
 
       // External editor
       if (keyMatchers[Command.OPEN_EXTERNAL_EDITOR](key)) {
-        buffer.openInExternalEditor();
+        void buffer.openInExternalEditor();
         return;
       }
 
@@ -811,11 +811,11 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
       if (keyMatchers[Command.PASTE_CLIPBOARD](key)) {
         // Check for Shift key to determine if we should take a screenshot
         if (key.shift) {
-          console.log('Taking screenshot...');
-          handleScreenshot();
+          debugLogger.log('Taking screenshot...');
+          void handleScreenshot();
         } else {
-          console.log('Pasting image from clipboard...');
-          handleClipboardImage();
+          debugLogger.log('Pasting image from clipboard...');
+          void handleClipboardImage();
         }
         return;
       }

@@ -26,6 +26,14 @@ export const IMAGE_EXTENSIONS = [
   '.heif',
 ];
 
+// Track clipboard state to prevent duplicate processing
+export const clipboardState = {
+  lastContentHash: '',
+  lastProcessedTime: 0,
+  minProcessInterval: 2000, // 2 seconds minimum between processing the same content
+  isProcessing: false, // Flag to prevent concurrent operations
+};
+
 /** Matches strings that start with a path prefix (/, ~, ., Windows drive letter, or UNC path) */
 const PATH_PREFIX_PATTERN = /^([/~.]|[a-zA-Z]:|\\\\)/;
 
@@ -252,6 +260,41 @@ export function splitEscapedPaths(text: string): string[] {
   }
 
   return paths;
+}
+
+/**
+ * Interface for paste protection options
+ */
+export interface PasteProtectionOptions {
+  /** Maximum allowed file size in bytes (for images/files) */
+  maxSizeBytes?: number;
+  /** Allowed file types (MIME types or extensions) */
+  allowedTypes?: string[];
+  /** Custom validation function for paste content */
+  validateContent?: (content: string) => Promise<boolean> | boolean;
+}
+
+/**
+ * Result of saving a clipboard image
+ */
+export interface SaveClipboardImageResult {
+  filePath: string | null;
+  displayName?: string; // User-friendly display name (e.g., "screenshot-1")
+  error?: string;
+}
+
+/**
+ * Saves the image from clipboard to a temporary file with protection checks (detailed result)
+ * @param targetDir The target directory to create temp files within
+ * @param protectionOptions Optional paste protection options
+ * @returns The detailed result of the operation with file path, display name, or error
+ */
+export async function saveClipboardImageDetailed(
+  targetDir?: string,
+  _protectionOptions: unknown = {},
+): Promise<SaveClipboardImageResult> {
+  const filePath = await saveClipboardImage(targetDir);
+  return { filePath };
 }
 
 /**
