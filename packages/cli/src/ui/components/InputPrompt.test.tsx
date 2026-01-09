@@ -44,6 +44,7 @@ const mockSlashCommands: SlashCommand[] = [
     kind: CommandKind.BUILT_IN,
     description: 'Clear screen',
     action: vi.fn(),
+    autoExecute: true,
   },
   {
     name: 'memory',
@@ -741,6 +742,12 @@ describe('InputPrompt', () => {
       showSuggestions: true,
       suggestions: [{ label: 'memory', value: 'memory' }],
       activeSuggestionIndex: 0,
+      getCommandFromSuggestion: vi.fn(() => ({
+        name: 'memory',
+        kind: CommandKind.BUILT_IN,
+        description: 'Manage memory',
+        autoExecute: false,
+      })),
     });
     props.buffer.setText('/mem');
 
@@ -755,6 +762,41 @@ describe('InputPrompt', () => {
     });
 
     expect(props.onSubmit).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('should execute directly on Enter when suggestions are active for autoExecute commands', async () => {
+    const mockGetCompletedText = vi.fn(() => '/clear');
+    mockedUseCommandCompletion.mockReturnValue({
+      ...mockCommandCompletion,
+      showSuggestions: true,
+      suggestions: [{ label: 'clear', value: 'clear' }],
+      activeSuggestionIndex: 0,
+      getCommandFromSuggestion: vi.fn(() => ({
+        name: 'clear',
+        kind: CommandKind.BUILT_IN,
+        description: 'Clear screen',
+        autoExecute: true,
+      })),
+      getCompletedText: mockGetCompletedText,
+    });
+    props.buffer.setText('/cle');
+
+    const { stdin, unmount } = renderWithProviders(<InputPrompt {...props} />);
+
+    await act(async () => {
+      stdin.write('\r');
+    });
+    await vi.waitFor(() => {
+      // The app should execute directly, NOT autocomplete.
+      expect(props.onSubmit).toHaveBeenCalledWith('/clear');
+    });
+
+    expect(mockCommandCompletion.handleAutocomplete).not.toHaveBeenCalled();
+    expect(mockGetCompletedText).toHaveBeenCalledWith({
+      label: 'clear',
+      value: 'clear',
+    });
     unmount();
   });
 

@@ -658,6 +658,18 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
                 ? 0 // Default to the first if none is active
                 : completion.activeSuggestionIndex;
             if (targetIndex < completion.suggestions.length) {
+              const suggestion = completion.suggestions[targetIndex];
+              const command = completion.getCommandFromSuggestion(suggestion);
+              if (command?.autoExecute) {
+                // For auto-execute commands, execute directly
+                const completedText = completion.getCompletedText(suggestion);
+                if (completedText !== null) {
+                  handleSubmit(completedText);
+                  setExpandedSuggestionIndex(-1);
+                  return;
+                }
+              }
+              // Otherwise, just autocomplete
               completion.handleAutocomplete(targetIndex);
               setExpandedSuggestionIndex(-1); // Reset expansion after selection
             }
