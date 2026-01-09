@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { exec } from 'node:child_process';
+import { exec, execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
@@ -12,6 +12,7 @@ import { debugLogger } from '@google/gemini-cli-core';
 // No longer using uuid
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 /**
  * Takes a screenshot and saves it to the specified directory
@@ -31,22 +32,35 @@ export async function takeScreenshot(
     const displayName = `screenshot-${timestamp.split('T')[0]}`;
 
     if (process.platform === 'darwin') {
-      // macOS - escape double quotes for shell
-      // Escape backslashes first, then double quotes
-      const safePath = filePath.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-      await execAsync(`screencapture -x "${safePath}"`);
+      // macOS
+      await execFileAsync('screencapture', ['-x', filePath]);
     } else if (process.platform === 'win32') {
-      // Windows - escape single quotes for PowerShell
-      const safePath = filePath.replace(/'/g, "''");
-      await execAsync(
-        `powershell -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{PRTSC}'); $image = [System.Windows.Forms.Clipboard]::GetImage(); if ($image) { $image.Save('${safePath}', [System.Drawing.Imaging.ImageFormat]::Png) }"`,
-      );
+      // Windows - use PowerShell with path as argument to avoid injection
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(
+          'powershell.exe',
+          [
+            '-Command',
+            `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{PRTSC}'); $image = [System.Windows.Forms.Clipboard]::GetImage(); if ($image) { $image.Save($args[0], [System.Drawing.Imaging.ImageFormat]::Png) }`,
+            filePath,
+          ],
+          { stdio: 'inherit' },
+        );
+        child.on('close', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`PowerShell exited with code ${code}`));
+          }
+        });
+        child.on('error', reject);
+      });
     } else if (process.platform === 'linux') {
       // Linux - requires scrot or gnome-screenshot
       try {
-        await execAsync(`gnome-screenshot -f "${filePath}"`);
+        await execFileAsync('gnome-screenshot', ['-f', filePath]);
       } catch {
-        await execAsync(`scrot -s "${filePath}"`);
+        await execFileAsync('scrot', ['-s', filePath]);
       }
     } else {
       debugLogger.error('Screenshot not supported on this platform');

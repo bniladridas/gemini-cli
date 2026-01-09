@@ -646,12 +646,6 @@ describeE2E('Clipboard E2E Tests', () => {
   });
 
   it('should respect content size limits', async () => {
-    // Skip this test on Windows as it's causing ENAMETOOLONG errors
-    if (process.platform === 'win32') {
-      console.warn('Skipping content size limit test on Windows');
-      return;
-    }
-
     // Generate a smaller string that's still large but won't cause issues
     const largeContent = 'a'.repeat(1024 * 1024); // 1MB
 
