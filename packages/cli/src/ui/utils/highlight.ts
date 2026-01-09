@@ -129,3 +129,12 @@ export function parseSegmentsFromTokens(
   }
   return segments;
 }
+
+export function buildSegmentsForVisualSlice(
+  tokens: readonly HighlightToken[],
+  visualStart: number,
+  visualEnd: number,
+) {
+  const sliceLength = visualEnd - visualStart;
+  return parseSegmentsFromTokens(tokens, visualStart, sliceLength);
+}
