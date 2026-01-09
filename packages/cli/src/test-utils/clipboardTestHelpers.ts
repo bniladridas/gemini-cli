@@ -7,7 +7,7 @@
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { exec, execFile } from 'node:child_process';
+import { exec, execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { debugLogger } from '@google/gemini-cli-core';
 
@@ -100,15 +100,23 @@ export class ClipboardTestHelpers {
 
     try {
       if (platform === 'win32') {
-        // Windows - requires .NET framework
-        // Escape single quotes for PowerShell to prevent injection
-        const escapedPath = absolutePath.replace(/'/g, "''");
-        const script = `
-          Add-Type -AssemblyName System.Windows.Forms;
-          $image = [System.Drawing.Image]::FromFile('${escapedPath}');
-          [System.Windows.Forms.Clipboard]::SetImage($image);
-        `;
-        await execAsync(`powershell -Command "${script}"`);
+        // Windows - use PowerShell with path as argument to prevent injection
+        await new Promise<void>((resolve, reject) => {
+          const child = spawn(
+            'powershell.exe',
+            [
+              '-Command',
+              'Add-Type -AssemblyName System.Windows.Forms; $image = [System.Drawing.Image]::FromFile($args[0]); [System.Windows.Forms.Clipboard]::SetImage($image)',
+              absolutePath,
+            ],
+            { stdio: 'inherit' },
+          );
+          child.on('close', (code: number | null) => {
+            if (code === 0) resolve(undefined);
+            else reject(new Error(`PowerShell exited with code ${code}`));
+          });
+          child.on('error', reject);
+        });
       } else if (platform === 'darwin') {
         // macOS - use osascript with path as argument to prevent injection
         await execFileAsync('osascript', [
