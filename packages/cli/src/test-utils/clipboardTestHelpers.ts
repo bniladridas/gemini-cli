@@ -7,7 +7,7 @@
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { exec, execFile } from 'node:child_process';
+import { exec, execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { debugLogger } from '@google/gemini-cli-core';
 
@@ -26,11 +26,19 @@ export class ClipboardTestHelpers {
 
     try {
       if (platform === 'win32') {
-        // Windows - Use PowerShell to avoid command injection
-        const escapedText = text.replace(/'/g, "''");
-        await execAsync(
-          `powershell -Command "Set-Clipboard -Value '${escapedText}'"`,
-        );
+        // Windows - use stdin to avoid command-line length limits
+        const proc = exec('clip');
+        proc.stdin?.write(text);
+        proc.stdin?.end();
+        await new Promise((resolve, reject) => {
+          proc.on('close', (code) => {
+            if (code === 0) resolve(undefined);
+            else reject(new Error(`clip exited with code ${code}`));
+          });
+          proc.on('error', reject);
+          // Add timeout to prevent hanging
+          setTimeout(() => reject(new Error('clip timed out')), 5000);
+        });
       } else if (platform === 'darwin') {
         // macOS
         const proc = exec('pbcopy');
@@ -92,15 +100,23 @@ export class ClipboardTestHelpers {
 
     try {
       if (platform === 'win32') {
-        // Windows - requires .NET framework
-        // Escape single quotes for PowerShell to prevent injection
-        const escapedPath = absolutePath.replace(/'/g, "''");
-        const script = `
-          Add-Type -AssemblyName System.Windows.Forms;
-          $image = [System.Drawing.Image]::FromFile('${escapedPath}');
-          [System.Windows.Forms.Clipboard]::SetImage($image);
-        `;
-        await execAsync(`powershell -Command "${script}"`);
+        // Windows - use PowerShell with path as argument to prevent injection
+        await new Promise<void>((resolve, reject) => {
+          const child = spawn(
+            'powershell.exe',
+            [
+              '-Command',
+              'Add-Type -AssemblyName System.Windows.Forms; $image = [System.Drawing.Image]::FromFile($args[0]); [System.Windows.Forms.Clipboard]::SetImage($image)',
+              absolutePath,
+            ],
+            { stdio: 'inherit' },
+          );
+          child.on('close', (code: number | null) => {
+            if (code === 0) resolve(undefined);
+            else reject(new Error(`PowerShell exited with code ${code}`));
+          });
+          child.on('error', reject);
+        });
       } else if (platform === 'darwin') {
         // macOS - use osascript with path as argument to prevent injection
         await execFileAsync('osascript', [
@@ -178,7 +194,7 @@ export class ClipboardTestHelpers {
         try {
           await fs.unlink(path.join(tempDir, file));
         } catch (error) {
-          debugLogger.warn(`Failed to delete temp file ${file}:`, error);
+          debugLogger.log(`Failed to delete temp file ${file}:`, error);
         }
       }
     }
@@ -262,7 +278,7 @@ export class ClipboardTestHelpers {
   ): void {
     const currentPlatform = os.platform();
     if (!platforms.includes(currentPlatform)) {
-      debugLogger.warn(
+      debugLogger.log(
         `Skipping test on ${currentPlatform} as it's not in the supported platforms: ${platforms.join(', ')}`,
       );
       return;

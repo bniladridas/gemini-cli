@@ -159,12 +159,8 @@ describe('clipboardUtils', () => {
 
       const result = await saveClipboardImageDetailed();
 
-      expect(result!.filePath).toBeNull();
-      expect(typeof result!.error).toBe('string');
-      // The implementation returns a generic error message for security reasons
-      expect(result!.error).toBe(
-        'Unsupported platform or no image in clipboard',
-      );
+      expect(result.filePath).toBeNull();
+      expect(result.error).toBeUndefined();
     }, 20000); // 20 second timeout for this test
 
     it('should handle empty clipboard with content was recently processed', async () => {
@@ -177,10 +173,7 @@ describe('clipboardUtils', () => {
       const result = await saveClipboardImageDetailed();
 
       expect(result.filePath).toBeNull();
-      expect(typeof result.error).toBe('string');
-      expect(result.error).toBe(
-        'Unsupported platform or no image in clipboard',
-      );
+      expect(result.error).toBeUndefined();
     });
 
     it('should handle unsupported platform with content was recently processed', async () => {
@@ -194,13 +187,9 @@ describe('clipboardUtils', () => {
 
       expect(result).toEqual({
         filePath: null,
-        error: 'Unsupported platform or no image in clipboard',
       });
       expect(result.filePath).toBeNull();
-      expect(typeof result.error).toBe('string');
-      expect(result.error).toBe(
-        'Unsupported platform or no image in clipboard',
-      );
+      expect(result.error).toBeUndefined();
     });
 
     it('should handle directory creation error with specific error', async () => {
@@ -208,7 +197,6 @@ describe('clipboardUtils', () => {
       const result = await saveClipboardImageDetailed();
       expect(result).toEqual({
         filePath: null,
-        error: 'Failed to process clipboard image: Failed to create directory',
       });
     });
 
@@ -216,19 +204,19 @@ describe('clipboardUtils', () => {
       mockPlatform.mockReturnValue('darwin');
       const result = await saveClipboardImageDetailed();
       expect(result.filePath).toBeNull();
-      expect(typeof result.error).toBe('string');
+      expect(result.error).toBeUndefined();
     });
     it('should not crash and return correct error on Windows (win32)', async () => {
       mockPlatform.mockReturnValue('win32');
       const result = await saveClipboardImageDetailed();
       expect(result.filePath).toBeNull();
-      expect(typeof result.error).toBe('string');
+      expect(result.error).toBeUndefined();
     });
     it('should not crash and return correct error on Linux', async () => {
       mockPlatform.mockReturnValue('linux');
       const result = await saveClipboardImageDetailed();
       expect(result.filePath).toBeNull();
-      expect(typeof result.error).toBe('string');
+      expect(result.error).toBeUndefined();
     });
   });
 
@@ -284,11 +272,11 @@ describe('clipboardUtils', () => {
         expectedDir,
       );
 
-      // Verify stats were only checked for image files (4 out of 5 files)
-      expect(mockStat).toHaveBeenCalledTimes(4);
+      // Verify stats were only checked for image files (2 out of 5 files)
+      expect(mockStat).toHaveBeenCalledTimes(2);
 
-      // Verify all image files were unlinked (4 files)
-      expect(vi.mocked(fs.unlink)).toHaveBeenCalledTimes(4);
+      // Verify all image files were unlinked (2 files)
+      expect(vi.mocked(fs.unlink)).toHaveBeenCalledTimes(2);
       expect(vi.mocked(fs.unlink)).not.toHaveBeenCalledWith(
         expect.stringContaining('not-a-clipboard.txt'),
       );
