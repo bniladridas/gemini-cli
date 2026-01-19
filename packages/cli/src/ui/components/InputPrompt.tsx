@@ -6,7 +6,7 @@
 
 import type React from 'react';
 import { useCallback, useEffect, useState, useRef } from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useStdout, type DOMElement } from 'ink';
 import { SuggestionsDisplay, MAX_WIDTH } from './SuggestionsDisplay.js';
 import { theme } from '../semantic-colors.js';
 import { useInputHistory } from '../hooks/useInputHistory.js';
@@ -23,10 +23,10 @@ import { useKeypress } from '../hooks/useKeypress.js';
 import { keyMatchers, Command } from '../keyMatchers.js';
 import type { CommandContext, SlashCommand } from '../commands/types.js';
 import type { Config } from '@google/gemini-cli-core';
-import { ApprovalMode } from '@google/gemini-cli-core';
+import { ApprovalMode, debugLogger } from '@google/gemini-cli-core';
 import {
   parseInputForHighlighting,
-  buildSegmentsForVisualSlice,
+  parseSegmentsFromTokens,
 } from '../utils/highlight.js';
 import { useKittyKeyboardProtocol } from '../hooks/useKittyKeyboardProtocol.js';
 import { takeAndAddScreenshot } from '../utils/screenshotUtils.js';
@@ -37,9 +37,11 @@ import {
 } from '../utils/clipboardUtils.js';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
+import * as clipboardy from 'clipboardy';
 import { SCREEN_READER_USER_PREFIX } from '../textConstants.js';
 import { useShellFocusState } from '../contexts/ShellFocusContext.js';
 import { useUIState } from '../contexts/UIStateContext.js';
+import { useSettings } from '../contexts/SettingsContext.js';
 import { StreamingState } from '../types.js';
 import { isSlashCommand } from '../utils/commandUtils.js';
 
@@ -121,6 +123,8 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
   streamingState,
   popAllMessages,
 }) => {
+  const { stdout } = useStdout();
+  const { merged: settings } = useSettings();
   const kittyProtocol = useKittyKeyboardProtocol();
   const isShellFocused = useShellFocusState();
   const { mainAreaWidth } = useUIState();
@@ -316,59 +320,66 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
   const handleClipboardImage = useCallback(async (): Promise<boolean> => {
     try {
       const hasImage = await clipboardHasImage();
-      if (!hasImage) {
-        console.log('No image found in clipboard');
-        return false;
-      }
+      if (hasImage) {
+        const targetDir = config.getTargetDir();
 
-      const targetDir = config.getTargetDir();
+        try {
+          // Clean up old images first
+          await cleanupOldClipboardImages(targetDir).catch(() => {
+            // Ignore cleanup errors
+          });
 
-      try {
-        // Clean up old images first
-        await cleanupOldClipboardImages(targetDir).catch(() => {
-          // Ignore cleanup errors
-        });
+          const saveResult = await saveClipboardImageDetailed(targetDir);
 
-        const saveResult = await saveClipboardImageDetailed(targetDir);
+          if (!saveResult?.filePath) {
+            console.error('Failed to save image from clipboard');
+            return false;
+          }
 
-        if (!saveResult?.filePath) {
-          console.error('Failed to save image from clipboard');
+          // Insert the file path with friendly name in markdown format: [screenshot-1](@path/to/image.png)
+          const relativePath = path.relative(
+            process.cwd(),
+            saveResult.filePath,
+          );
+          const displayName = saveResult.displayName || 'screenshot';
+          const markdownLink = `[${displayName}](@${relativePath})`;
+
+          // Insert the markdown link at the current cursor position using replaceRangeByOffset
+          const cursorPos = buffer.cursor;
+          const lines = buffer.lines;
+
+          // Calculate the offset for the cursor position
+          let offset = 0;
+          for (let i = 0; i < cursorPos[0]; i++) {
+            offset += lines[i].length + 1; // +1 for newline
+          }
+          offset += cursorPos[1];
+
+          // Insert at cursor position
+          buffer.replaceRangeByOffset(offset, offset, markdownLink);
+
+          // Update cursor position
+          buffer.cursor = [cursorPos[0], cursorPos[1] + markdownLink.length];
+
+          console.log(`Added image: ${markdownLink}`);
+          return true;
+        } catch (error) {
+          console.error('Error processing clipboard image:', error);
           return false;
         }
-
-        // Insert the file path with friendly name in markdown format: [screenshot-1](@path/to/image.png)
-        const relativePath = path.relative(process.cwd(), saveResult.filePath);
-        const displayName = saveResult.displayName || 'screenshot';
-        const markdownLink = `[${displayName}](@${relativePath})`;
-
-        // Insert the markdown link at the current cursor position using replaceRangeByOffset
-        const cursorPos = buffer.cursor;
-        const lines = buffer.lines;
-
-        // Calculate the offset for the cursor position
-        let offset = 0;
-        for (let i = 0; i < cursorPos[0]; i++) {
-          offset += lines[i].length + 1; // +1 for newline
+      } else {
+        if (settings.experimental?.useOSC52Paste) {
+          stdout.write('\x1b]52;c;?\x07');
+        } else {
+          const textToInsert = await clipboardy.read();
+          const offset = buffer.getOffset();
+          buffer.replaceRangeByOffset(offset, offset, textToInsert);
         }
-        offset += cursorPos[1];
-
-        // Insert at cursor position
-        buffer.replaceRangeByOffset(offset, offset, markdownLink);
-
-        // Update cursor position
-        buffer.cursor = [cursorPos[0], cursorPos[1] + markdownLink.length];
-
-        console.log(`Added image: ${markdownLink}`);
-        return true;
-      } catch (error) {
-        console.error('Error processing clipboard image:', error);
-        return false;
       }
     } catch (error) {
-      console.error('Error handling clipboard image:', error);
-      return false;
+      debugLogger.error('Error handling paste:', error);
     }
-  }, [buffer, config]);
+  }, [buffer, config, stdout, settings]);
 
   // Handle taking a screenshot
   const handleScreenshot = useCallback(async () => {
@@ -1072,21 +1083,27 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
 
                 const renderedLine: React.ReactNode[] = [];
 
-                const [logicalLineIdx, logicalStartCol] = mapEntry;
+                const [logicalLineIdx] = mapEntry;
                 const logicalLine = buffer.lines[logicalLineIdx] || '';
+                const transformations =
+                  buffer.transformationsByLine[logicalLineIdx] ?? [];
                 const tokens = parseInputForHighlighting(
                   logicalLine,
                   logicalLineIdx,
+                  transformations,
+                  ...(focus && buffer.cursor[0] === logicalLineIdx
+                    ? [buffer.cursor[1]]
+                    : []),
                 );
-
-                const visualStart = logicalStartCol;
-                const visualEnd = logicalStartCol + cpLen(lineText);
-                const segments = buildSegmentsForVisualSlice(
+                const startColInTransformed =
+                  buffer.visualToTransformedMap[absoluteVisualIdx] ?? 0;
+                const visualStartCol = startColInTransformed;
+                const visualEndCol = visualStartCol + cpLen(lineText);
+                const segments = parseSegmentsFromTokens(
                   tokens,
-                  visualStart,
-                  visualEnd,
+                  visualStartCol,
+                  visualEndCol,
                 );
-
                 let charCount = 0;
                 segments.forEach((seg, segIdx) => {
                   const segLen = cpLen(seg.text);
@@ -1102,7 +1119,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
                       relativeVisualColForHighlight < segEnd
                     ) {
                       const charToHighlight = cpSlice(
-                        seg.text,
+                        display,
                         relativeVisualColForHighlight - segStart,
                         relativeVisualColForHighlight - segStart + 1,
                       );
@@ -1111,17 +1128,20 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
                         : charToHighlight;
                       display =
                         cpSlice(
-                          seg.text,
+                          display,
                           0,
                           relativeVisualColForHighlight - segStart,
                         ) +
                         highlighted +
                         cpSlice(
-                          seg.text,
+                          display,
                           relativeVisualColForHighlight - segStart + 1,
                         );
                     }
                     charCount = segEnd;
+                  } else {
+                    // Advance the running counter even when not on cursor line
+                    charCount += segLen;
                   }
 
                   const color =

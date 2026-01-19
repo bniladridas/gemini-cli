@@ -4,13 +4,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { renderWithProviders } from '../../test-utils/render.js';
+import {
+  renderWithProviders,
+  createMockSettings,
+} from '../../test-utils/render.js';
+import { waitFor } from '../../test-utils/async.js';
+import clipboardy from 'clipboardy';
 import { act } from 'react';
 import type { InputPromptProps } from './InputPrompt.js';
 import { InputPrompt } from './InputPrompt.js';
 import type { TextBuffer } from './shared/text-buffer.js';
+import {
+  calculateTransformationsForLine,
+  calculateTransformedLine,
+} from './shared/text-buffer.js';
 import type { Config } from '@google/gemini-cli-core';
-import { ApprovalMode } from '@google/gemini-cli-core';
+import { ApprovalMode, debugLogger } from '@google/gemini-cli-core';
 import * as path from 'node:path';
 import type { CommandContext, SlashCommand } from '../commands/types.js';
 import { CommandKind } from '../commands/types.js';
@@ -37,6 +46,7 @@ vi.mock('../hooks/useInputHistory.js');
 vi.mock('../hooks/useReverseSearchCompletion.js');
 vi.mock('../utils/clipboardUtils.js');
 vi.mock('../hooks/useKittyKeyboardProtocol.js');
+vi.mock('clipboardy');
 
 const mockSlashCommands: SlashCommand[] = [
   {
@@ -162,6 +172,9 @@ describe('InputPrompt', () => {
         isEmpty: true,
       })),
       visualToLogicalMap: [[0, 0]],
+      visualToTransformedMap: [0],
+      transformationsByLine: [],
+      getOffset: vi.fn().mockReturnValue(0),
     } as unknown as TextBuffer;
 
     mockShellHistory = {
@@ -616,8 +629,8 @@ describe('InputPrompt', () => {
     });
 
     it('should handle errors during clipboard operations', async () => {
-      const consoleErrorSpy = vi
-        .spyOn(console, 'error')
+      const debugLoggerErrorSpy = vi
+        .spyOn(debugLogger, 'error')
         .mockImplementation(() => {});
       vi.mocked(clipboardUtils.clipboardHasImage).mockRejectedValue(
         new Error('Clipboard error'),
@@ -630,21 +643,115 @@ describe('InputPrompt', () => {
       await act(async () => {
         stdin.write('\x16'); // Ctrl+V
       });
+<<<<<<< HEAD
       await vi.waitFor(() => {
         expect(consoleErrorSpy).toHaveBeenCalledWith(
           'Error handling clipboard image:',
+=======
+      await waitFor(() => {
+        expect(debugLoggerErrorSpy).toHaveBeenCalledWith(
+          'Error handling paste:',
+>>>>>>> main
           expect.any(Error),
         );
       });
       expect(mockBuffer.setText).not.toHaveBeenCalled();
 
-      consoleErrorSpy.mockRestore();
+      debugLoggerErrorSpy.mockRestore();
       unmount();
     });
   });
 
-  it('should complete a partial parent command', async () => {
-    // SCENARIO: /mem -> Tab
+<<<<<<< HEAD
+    mockedUseCommandCompletion.mockReturnValue({
+      ...mockCommandCompletion,
+      showSuggestions: true,
+      suggestions,
+      activeSuggestionIndex: activeIndex,
+    });
+    props.buffer.setText(bufferText);
+
+    const { stdin, unmount } = renderWithProviders(<InputPrompt {...props} />);
+
+    await act(async () => {
+      stdin.write('\t'); // Press Tab
+    });
+    await vi.waitFor(() =>
+      expect(mockCommandCompletion.handleAutocomplete).toHaveBeenCalledWith(activeIndex),
+    );
+    unmount();
+  });
+
+      await waitFor(() => {
+        expect(clipboardy.read).toHaveBeenCalled();
+        expect(mockBuffer.replaceRangeByOffset).toHaveBeenCalledWith(
+          expect.any(Number),
+          expect.any(Number),
+          'pasted text',
+        );
+      });
+      unmount();
+    });
+
+    it('should use OSC 52 when useOSC52Paste setting is enabled', async () => {
+      vi.mocked(clipboardUtils.clipboardHasImage).mockResolvedValue(false);
+      const settings = createMockSettings({
+        experimental: { useOSC52Paste: true },
+      });
+
+      const { stdout, stdin, unmount } = renderWithProviders(
+        <InputPrompt {...props} />,
+        { settings },
+      );
+
+      const writeSpy = vi.spyOn(stdout, 'write');
+
+      await act(async () => {
+        stdin.write('\x16'); // Ctrl+V
+      });
+
+      await waitFor(() => {
+        expect(writeSpy).toHaveBeenCalledWith('\x1b]52;c;?\x07');
+      });
+      // Should NOT call clipboardy.read()
+      expect(clipboardy.read).not.toHaveBeenCalled();
+      unmount();
+    });
+  });
+
+  it.each([
+    {
+      name: 'should complete a partial parent command',
+      bufferText: '/mem',
+      suggestions: [{ label: 'memory', value: 'memory', description: '...' }],
+      activeIndex: 0,
+    },
+    {
+      name: 'should append a sub-command when parent command is complete',
+      bufferText: '/memory ',
+      suggestions: [
+        { label: 'show', value: 'show' },
+        { label: 'add', value: 'add' },
+      ],
+      activeIndex: 1,
+    },
+    {
+      name: 'should handle the backspace edge case correctly',
+      bufferText: '/memory',
+      suggestions: [
+        { label: 'show', value: 'show' },
+        { label: 'add', value: 'add' },
+      ],
+      activeIndex: 0,
+    },
+    {
+      name: 'should complete a partial argument for a command',
+      bufferText: '/chat resume fi-',
+      suggestions: [{ label: 'fix-foo', value: 'fix-foo' }],
+      activeIndex: 0,
+    },
+  ])('$name', async ({ bufferText, suggestions, activeIndex }) => {
+>>>>>>> main
     mockedUseCommandCompletion.mockReturnValue({
       ...mockCommandCompletion,
       showSuggestions: true,
@@ -2430,6 +2537,59 @@ describe('InputPrompt', () => {
         unmount();
       },
     );
+  });
+
+  describe('image path transformation snapshots', () => {
+    const logicalLine = '@/path/to/screenshots/screenshot2x.png';
+    const transformations = calculateTransformationsForLine(logicalLine);
+
+    const applyVisualState = (visualLine: string, cursorCol: number): void => {
+      mockBuffer.text = logicalLine;
+      mockBuffer.lines = [logicalLine];
+      mockBuffer.viewportVisualLines = [visualLine];
+      mockBuffer.allVisualLines = [visualLine];
+      mockBuffer.visualToLogicalMap = [[0, 0]];
+      mockBuffer.visualToTransformedMap = [0];
+      mockBuffer.transformationsByLine = [transformations];
+      mockBuffer.cursor = [0, cursorCol];
+      mockBuffer.visualCursor = [0, 0];
+    };
+
+    it('should snapshot collapsed image path', async () => {
+      const { transformedLine } = calculateTransformedLine(
+        logicalLine,
+        0,
+        [0, transformations[0].logEnd + 5],
+        transformations,
+      );
+      applyVisualState(transformedLine, transformations[0].logEnd + 5);
+
+      const { stdout, unmount } = renderWithProviders(
+        <InputPrompt {...props} />,
+      );
+      await waitFor(() => {
+        expect(stdout.lastFrame()).toMatchSnapshot();
+      });
+      unmount();
+    });
+
+    it('should snapshot expanded image path when cursor is on it', async () => {
+      const { transformedLine } = calculateTransformedLine(
+        logicalLine,
+        0,
+        [0, transformations[0].logStart + 1],
+        transformations,
+      );
+      applyVisualState(transformedLine, transformations[0].logStart + 1);
+
+      const { stdout, unmount } = renderWithProviders(
+        <InputPrompt {...props} />,
+      );
+      await waitFor(() => {
+        expect(stdout.lastFrame()).toMatchSnapshot();
+      });
+      unmount();
+    });
   });
 });
 
